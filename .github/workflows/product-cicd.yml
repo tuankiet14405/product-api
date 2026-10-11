@@ -1,0 +1,91 @@
+name: Product CI-CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-api-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies and run basic tests
+        run: |
+          npm ci
+          npm test
+
+      - name: Build and wait for healthy services
+        run: |
+          docker compose -f docker-compose-ci.yaml up \
+            -d --build --wait --wait-timeout 180
+
+      - name: Run CRUD integration tests
+        run: npm run test:integration
+
+      - name: Save tested image
+        run: docker save product-api:ci -o product-api-image.tar
+
+      - name: Upload tested image
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-product-api
+          path: product-api-image.tar
+          retention-days: 1
+
+      - name: Show status and logs
+        if: always()
+        run: |
+          docker compose -f docker-compose-ci.yaml ps
+          docker compose -f docker-compose-ci.yaml logs --no-color
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose-ci.yaml down -v
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download tested image
+        uses: actions/download-artifact@v4
+        with:
+          name: tested-product-api
+
+      - name: Load tested image
+        run: docker load -i product-api-image.tar
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push tested image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          IMAGE="$DOCKERHUB_USERNAME/product-api"
+          docker tag product-api:ci "$IMAGE:$GITHUB_SHA"
+          docker tag product-api:ci "$IMAGE:latest"
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:latest"
