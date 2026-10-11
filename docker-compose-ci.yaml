@@ -1,0 +1,32 @@
+services:
+  mongodb:
+    image: mongo:8
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "quit(db.adminCommand({ping:1}).ok ? 0 : 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build: .
+    image: product-api:ci
+    environment:
+      PORT: "3000"
+      MONGODB_URI: mongodb://mongodb:27017/productdb_ci
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.js"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
