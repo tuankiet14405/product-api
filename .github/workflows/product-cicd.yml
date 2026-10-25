@@ -90,61 +90,61 @@ jobs:
           docker push "$IMAGE:$GITHUB_SHA"
           docker push "$IMAGE:latest"
   deploy-local:
-      needs: publish
-      if: github.ref == 'refs/heads/main'
-      runs-on: [self-hosted, Windows, X64, product-api-local]
-      timeout-minutes: 10
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64, product-api-local]
+    timeout-minutes: 10
 
-      defaults:
-        run:
-          shell: powershell
+    defaults:
+      run:
+        shell: powershell
 
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        - name: Deploy exact commit image
-          env:
-            DOCKERHUB_USERNAME: tuankiet1404
-            IMAGE_TAG: ${{ github.sha }}
-          run: |
-            $ErrorActionPreference = "Stop"
+      - name: Deploy exact commit image
+        env:
+          DOCKERHUB_USERNAME: tuankiet1404
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = "Stop"
 
-            if (!(Test-Path "C:\deploy\product-api\.env.prod")) {
-              throw "Missing C:\deploy\product-api\.env.prod"
-            }
+          if (!(Test-Path "C:\deploy\product-api\.env.prod")) {
+            throw "Missing C:\deploy\product-api\.env.prod"
+          }
 
-            Copy-Item "docker-compose-prod.yaml" `
-              "C:\deploy\product-api\docker-compose-prod.yaml" -Force
+          Copy-Item "docker-compose-prod.yaml" `
+            "C:\deploy\product-api\docker-compose-prod.yaml" -Force
 
-            Set-Location "C:\deploy\product-api"
+          Set-Location "C:\deploy\product-api"
 
-            docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml pull
-            if ($LASTEXITCODE -ne 0) {
-              throw "Docker pull failed"
-            }
+          docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml pull
+          if ($LASTEXITCODE -ne 0) {
+            throw "Docker pull failed"
+          }
 
-            docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml up -d --wait --wait-timeout 180
-            if ($LASTEXITCODE -ne 0) {
-              throw "Deployment or healthcheck failed"
-            }
+          docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml up -d --wait --wait-timeout 180
+          if ($LASTEXITCODE -ne 0) {
+            throw "Deployment or healthcheck failed"
+          }
 
-            $result = Invoke-RestMethod `
-              -Uri "http://localhost:3000/health" `
-              -TimeoutSec 10
+          $result = Invoke-RestMethod `
+            -Uri "http://localhost:3000/health" `
+            -TimeoutSec 10
 
-            if ($result.status -ne "ok" -or $result.database -ne "up") {
-              throw "API healthcheck failed"
-            }
+          if ($result.status -ne "ok" -or $result.database -ne "up") {
+            throw "API healthcheck failed"
+          }
 
-            Write-Output "Deployment successful: $env:IMAGE_TAG"
+          Write-Output "Deployment successful: $env:IMAGE_TAG"
 
-        - name: Show deployment status
-          if: always()
-          env:
-            DOCKERHUB_USERNAME: tuankiet1404
-            IMAGE_TAG: ${{ github.sha }}
-          run: |
-            Set-Location "C:\deploy\product-api"
-            docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml ps
-            docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml logs --tail 50 --no-color
+      - name: Show deployment status
+        if: always()
+        env:
+          DOCKERHUB_USERNAME: tuankiet1404
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          Set-Location "C:\deploy\product-api"
+          docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml ps
+          docker compose -p product-api-prod --env-file .env.prod -f docker-compose-prod.yaml logs --tail 50 --no-color
